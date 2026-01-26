@@ -429,10 +429,37 @@ ANE uses IOSurface for tensor memory, enabling zero-copy sharing with GPU/Metal.
 
 | Entitlement | Purpose | Required For |
 |-------------|---------|--------------|
-| `com.apple.ane.iokit-user-access` | Basic IOKit access | Any ANE operation |
-| `com.apple.private.ane-client` | ANE client operations | compile, load, evaluate |
-| `com.apple.aned.internal` | Full daemon access | Internal diagnostics |
-| `com.apple.developer.kernel.extended-virtual-addressing` | Large address space | Models >4GB |
+| `com.apple.aned.private.allow` | **Primary ANE access** | compile, load, evaluate |
+| `com.apple.aned.private.adapterWeight.allow` | Adapter weights access | Custom weight loading |
+| `com.apple.aned.private.aggressivePowerSaving.allow` | Power saving modes | Low-power inference |
+| `com.apple.ANECompilerService.allow` | Compiler service access | Model compilation |
+| `com.apple.aned.private.processModelShare.allow` | Cross-process model sharing | Shared inference |
+| `com.apple.ane.memoryUnwiringOptOutAccess.allow` | Memory unwiring control | Large model persistence |
+| `com.apple.private.modelPurgeInAllPartitions.allow` | Model cache purging | Cache management |
+| `com.apple.aned.private.secondaryANECompilerServiceAccess.allow` | Secondary compiler | Parallel compilation |
+| `com.apple.private.ANEStorageMaintainer.allow` | Storage maintenance | Cache cleanup |
+
+### Boot Arguments (Internal/Debug Builds Only)
+
+On Apple internal builds, these boot-args can bypass entitlement checks:
+
+| Boot Arg | Purpose | Effect |
+|----------|---------|--------|
+| `ane_skipAdapterWeightAccessCheck` | **Bypass adapter weight entitlement** | Skip `com.apple.aned.private.adapterWeight.allow` check |
+| `ane_vm_allowPrecompiledBinary` | Allow precompiled binaries | Skip binary validation in VM |
+| `ane_vm_debugDumpBootArg` | Enable debug dumps | Dump ANE state on errors |
+| `ane_vm_forceValidationOnGuest` | Force validation in VM | Extra validation for VMs |
+
+**Note:** These boot-args only work when `isInternalBuild` returns true (Apple internal builds only). Consumer macOS always returns `false` for `isInternalBuild`.
+
+### Internal Build Detection
+
+The `aned` daemon checks for internal builds via `_ANEDeviceInfo.isInternalBuild`, which:
+1. Checks for `/AppleInternal` directory existence
+2. Queries `os_variant_has_internal_content("com.apple.aned")`
+3. Checks `os_variant_allows_internal_security_policies("com.apple.aned")`
+
+All checks return `false` on consumer macOS installations.
 
 ### Model Cache
 
@@ -445,6 +472,49 @@ Cache operations in `aned`:
 - `com.apple.aned.modelCacheAsyncIO`
 - `com.apple.aned.modelCacheGC`
 - `com.apple.aned.danglingModelsGC`
+
+### Runtime Class Reference
+
+Key classes discovered through runtime introspection:
+
+#### `_ANEDeviceInfo` (Class Methods)
+```objc
++ (BOOL)hasANE;                    // Returns YES on Apple Silicon
++ (NSInteger)numANEs;              // Number of ANE devices (usually 1)
++ (NSInteger)numANECores;          // Number of cores (e.g., 16 for M1)
++ (NSString *)productName;         // "macOS"
++ (NSString *)buildVersion;        // e.g., "25B78"
++ (NSInteger)aneArchitectureType;  // Hardware architecture identifier
++ (NSInteger)aneSubType;           // Hardware subtype
++ (BOOL)isVirtualMachine;          // VM detection
++ (BOOL)isInternalBuild;           // Apple internal build detection
++ (BOOL)precompiledModelChecksDisabled;
++ (NSString *)bootArgs;            // Current boot arguments
++ (BOOL)isBootArgPresent:(NSString *)arg;
++ (BOOL)isBoolBootArgSetTrue:(NSString *)arg;
+```
+
+#### `_ANEStrings` (Class Methods - Returns Constant Strings)
+```objc
++ (NSString *)restrictedAccessEntitlement;      // "com.apple.aned.private.allow"
++ (NSString *)adapterWeightsAccessEntitlement;  // "com.apple.aned.private.adapterWeight.allow"
++ (NSString *)adapterWeightsAccessEntitlementBypassBootArg;  // "ane_skipAdapterWeightAccessCheck"
++ (NSString *)internalLibraryPath;              // "/AppleInternal/Library"
++ (NSString *)systemLibraryPath;                // "/System/Library"
+// ... and many more
+```
+
+#### Hardware Info Example Output
+```
+hasANE = 1
+numANEs = 1
+numANECores = 16
+productName = macOS
+buildVersion = 25B78
+isVirtualMachine = 0
+isInternalBuild = 0
+precompiledModelChecksDisabled = 0
+```
 
 ---
 

@@ -6,3 +6,4 @@ from .espresso import *
 from .pbze import *
 from .xpc import *
 from .sample import *
+from .device import *

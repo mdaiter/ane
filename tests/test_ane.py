@@ -532,5 +532,84 @@ class TestANEXPC:
     assert "com.apple.aned.internal" in REQUIRED_ENTITLEMENTS
 
 
+class TestANEDevice:
+  """Tests for ANE device info and security research."""
+  
+  def test_boot_args_constants(self):
+    from ane import BOOT_ARGS
+    
+    # Check known boot args exist
+    assert "ane_skipAdapterWeightAccessCheck" in BOOT_ARGS
+    assert "ane_vm_allowPrecompiledBinary" in BOOT_ARGS
+    
+    # Check structure
+    bypass_info = BOOT_ARGS["ane_skipAdapterWeightAccessCheck"]
+    assert "purpose" in bypass_info
+    assert "bypasses_entitlement" in bypass_info
+    assert bypass_info["bypasses_entitlement"] == "com.apple.aned.private.adapterWeight.allow"
+  
+  def test_entitlements_constants(self):
+    from ane import ENTITLEMENTS
+    
+    # Check known entitlements exist
+    assert "com.apple.aned.private.allow" in ENTITLEMENTS
+    assert "com.apple.aned.private.adapterWeight.allow" in ENTITLEMENTS
+    
+    # Check structure
+    primary = ENTITLEMENTS["com.apple.aned.private.allow"]
+    assert "purpose" in primary
+    assert "required_for" in primary
+    assert "compile" in primary["required_for"]
+  
+  def test_system_paths_constants(self):
+    from ane import SYSTEM_PATHS
+    
+    # Check known paths exist
+    assert "aned_daemon" in SYSTEM_PATHS
+    assert SYSTEM_PATHS["aned_daemon"] == "/usr/libexec/aned"
+    assert "ane_services" in SYSTEM_PATHS
+    assert "internal_library" in SYSTEM_PATHS
+    assert SYSTEM_PATHS["internal_library"] == "/AppleInternal/Library"
+  
+  def test_check_internal_build_indicators(self):
+    from ane import check_internal_build_indicators
+    
+    indicators = check_internal_build_indicators()
+    
+    # Should have all expected keys
+    assert "apple_internal_exists" in indicators
+    assert "os_variant" in indicators
+    assert "is_internal_build" in indicators
+    
+    # On consumer macOS, should be False
+    assert indicators["is_internal_build"] == False
+  
+  def test_get_boot_args(self):
+    from ane import get_boot_args
+    
+    # Should return a string (may be empty)
+    boot_args = get_boot_args()
+    assert isinstance(boot_args, str)
+  
+  def test_is_boot_arg_present(self):
+    from ane import is_boot_arg_present
+    
+    # ANE bypass should not be present on consumer macOS
+    assert is_boot_arg_present("ane_skipAdapterWeightAccessCheck") == False
+  
+  def test_get_entitlement_requirements(self):
+    from ane import get_entitlement_requirements
+    
+    reqs = get_entitlement_requirements()
+    
+    # Should have expected operations
+    assert "compile" in reqs
+    assert "load" in reqs
+    assert "evaluate" in reqs
+    
+    # Should have entitlements listed
+    # Note: The actual entitlements depend on the mapping logic
+
+
 if __name__ == "__main__":
   pytest.main([__file__, "-v"])
