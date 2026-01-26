@@ -31,6 +31,9 @@ Reverse engineering artifacts for Apple's Neural Engine stack: **ANECompiler**, 
 | **Silent Failures** | `compileModel:` returns NULL without error | Operations fail silently without entitlements |
 | **IOSurface Memory** | `EspressoANEIOSurface` (21 methods) | Zero-copy tensor sharing with Metal |
 | **Quantization Modes** | `quantization_mode:2` on inner_product | ANE-specific quantization discovered |
+| **CoreML ANE Path** | `MLComputeUnitsAll` enables ANE | Working path for ANE execution via public API |
+| **HWX Binary Format** | Magic `0xBEEFFACE`, Mach-O-like | Pre-compiled ANE instructions per chip generation |
+| **16 ANE Cores** | M3 Pro has 16 neural engine cores | Confirmed via `MLNeuralEngineComputeDevice` |
 
 ### Quick Reference: What Works Without Entitlements
 
@@ -44,6 +47,9 @@ Reverse engineering artifacts for Apple's Neural Engine stack: **ANECompiler**, 
 | Call `compileModel:` | No | Returns NULL silently |
 | Call `loadModel:` | No | Returns NULL silently |
 | ANE inference | No | Requires entitlements |
+| **CoreML with ANE** | **Yes** | **Use `MLComputeUnitsAll` - working path!** |
+| **XPC to aned** | Yes | Connection succeeds, ops need entitlements |
+| **MLComputePlan** | Yes | Can inspect device availability |
 
 ---
 
@@ -1072,6 +1078,96 @@ Test categories:
 - `TestPBZE` - Compression/decompression
 - `TestANEXPC` - XPC protocol discovery
 - `TestAPITree` - Knowledge base API tree
+
+---
+
+## HWX File Format & Execution Research
+
+### Working Path: CoreML API
+
+The simplest way to execute models on ANE is through CoreML's public API:
+
+```objc
+// Objective-C
+MLModelConfiguration *config = [[MLModelConfiguration alloc] init];
+config.computeUnits = MLComputeUnitsAll;  // Enables ANE
+
+MLModel *model = [MLModel modelWithContentsOfURL:modelURL 
+                                   configuration:config 
+                                           error:&error];
+```
+
+```python
+# Python with coremltools
+import coremltools as ct
+model = ct.models.MLModel("model.mlpackage", compute_units=ct.ComputeUnit.ALL)
+```
+
+### HWX Binary Format
+
+Pre-compiled ANE binaries (`.hwx` files) have a Mach-O-like structure:
+
+| Offset | Value | Description |
+|--------|-------|-------------|
+| 0x00 | `0xBEEFFACE` | Magic number |
+| 0x04 | varies | Header info |
+| ... | `__PAGEZERO` | Zero page segment |
+| ... | `__DATA` | Data segment |
+| ... | `__FVMLIB` | ANE instructions |
+
+**Key insight**: HWX files cannot be loaded alone - they require a companion `.espresso.net` file that describes the network structure.
+
+### Espresso Model Bundle Structure
+
+A complete Espresso model bundle contains:
+
+| File | Description |
+|------|-------------|
+| `model.espresso.net` | Network description (JSON or PBZE) |
+| `model.espresso.weights` | Binary weights data |
+| `model.espresso.shape` | Shape information |
+| `model.H14.espresso.hwx` | Pre-compiled ANE binary (chip-specific) |
+| `model.H14.espresso.precompilation_info` | Compiler metadata (JSON) |
+
+Different `.hwx` files exist for different ANE generations:
+- `.H13.espresso.hwx` - A14/M1 generation
+- `.H14.espresso.hwx` - A15/M2 generation  
+- `.H15.espresso.hwx` - A16/M3 generation
+- `.H16.espresso.hwx` - A17/M4 generation
+
+### API Layer Summary
+
+| Layer | Status | Notes |
+|-------|--------|-------|
+| **CoreML** | ✅ Working | Use `MLComputeUnitsAll`, system handles everything |
+| **XPC to aned** | ✅ Working | `_ANEClient.sharedConnection` works |
+| **ANEServices** | ⚠️ Limited | Model loading needs `.espresso.net` |
+| **Espresso** | ⚠️ Limited | Platform 2 (ANE) context crashes |
+| **IOKit Direct** | ❌ Blocked | Requires `com.apple.ane.iokit-user-access` |
+
+### MLComputePlan Device Masks
+
+When inspecting `MLComputePlan.computeDevicesBySupportedComputeUnits`:
+
+| Mask | Devices |
+|------|---------|
+| 1 | CPU only |
+| 2 | GPU only |
+| 3 | CPU + GPU |
+| 4 | Neural Engine only |
+| 5 | CPU + Neural Engine |
+| 6 | GPU + Neural Engine |
+| 7 | CPU + GPU + Neural Engine (all) |
+
+### Hardware Detection
+
+```objc
+// Get ANE device info
+Class deviceClass = NSClassFromString(@"MLNeuralEngineComputeDevice");
+id device = [deviceClass performSelector:@selector(physicalDevice)];
+NSInteger cores = [[device valueForKey:@"totalCoreCount"] integerValue];
+// Returns 16 on M3 Pro
+```
 
 ---
 
