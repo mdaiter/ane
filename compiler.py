@@ -3,6 +3,7 @@
 from __future__ import annotations
 import ctypes
 import struct
+import platform
 from dataclasses import dataclass, field
 from typing import Optional, Any
 from pathlib import Path
@@ -215,6 +216,9 @@ class ANECSDPALayerDesc:
 # ============================================================================
 # ANE Runtime API
 # ============================================================================
+
+# Current OS
+MACOS_VERSION = platform.mac_ver()[0]
 
 class ANECompiler:
   """Python wrapper for ANECompiler private framework."""
@@ -528,4 +532,4 @@ if __name__ == "__main__":
             if result:
                 print(f"  {name}: {result}")
             else:
-                print(f"  {name}: {RED}Not available on this macOS version")
+                print(f"  {name}: {RED}Not available on macOS {MACOS_VERSION}")
